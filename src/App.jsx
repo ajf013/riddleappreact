@@ -76,8 +76,11 @@ function App() {
       }
     } catch (err) {
       console.warn("API failed, falling back to local:", err);
-      // Fallback to local on error
-      switchToOfflineMode();
+      // Fallback to local on error, but keep isOffline false if we are actually online
+      const { index, history } = getRandomLocalRiddle(riddleHistory);
+      setCurrentRiddleIndex(index);
+      setRiddleHistory(history);
+      setApiRiddle(null);
     } finally {
       setLoading(false);
     }
@@ -93,15 +96,32 @@ function App() {
 
   useEffect(() => {
     AOS.init({ duration: 1000 });
-    // Initial load
+
+    // Check initial online status
+    setIsOffline(!navigator.onLine);
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      // Optional: we could auto-fetch here if needed
+    };
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial load logic
     if (language === 'en') {
       fetchRiddle();
     } else {
-      // Initialize random local riddle for Tamil
       const { index, history } = getRandomLocalRiddle([]);
       setCurrentRiddleIndex(index);
       setRiddleHistory(history);
     }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   // Re-fetch or reset when language changes
@@ -170,14 +190,19 @@ function App() {
       <header className="header" data-aos="fade-down">
         <h1>Riddle App React</h1>
         <div className="controls">
-          <button
-            className={`control-btn language-btn ${language === 'ta' ? 'active' : ''}`}
-            onClick={() => setLanguage(language === 'en' ? 'ta' : 'en')}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            {language === 'en' ? 'English' : 'தமிழ்'}
-            <svg viewBox="0 0 24 24" style={{ width: '1.2rem', height: '1.2rem', fill: 'currentColor' }}><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z" /></svg>
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button
+              className={`control-btn language-btn ${language === 'ta' ? 'active' : ''}`}
+              onClick={() => setLanguage(language === 'en' ? 'ta' : 'en')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              {language === 'en' ? 'English' : 'தமிழ்'}
+              <svg viewBox="0 0 24 24" style={{ width: '1.2rem', height: '1.2rem', fill: 'currentColor' }}><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z" /></svg>
+            </button>
+            <span style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
+              {language === 'en' ? 'Switch to தமிழ்' : 'Switch to English'}
+            </span>
+          </div>
 
           <button
             aria-label="Toggle Dark Mode"
@@ -191,22 +216,30 @@ function App() {
 
       <main className="main-content">
         <div className="riddle-card" data-aos="zoom-in">
-          {/* Offline Indicator */}
-          {language === 'en' && isOffline && (
-            <div style={{
-              position: 'absolute',
-              top: '10px',
-              right: '10px',
-              background: '#ff9f1c',
-              color: 'white',
-              padding: '2px 8px',
-              borderRadius: '10px',
-              fontSize: '0.8rem',
-              fontWeight: 'bold'
-            }}>
-              Offline Mode 📶
-            </div>
-          )}
+          {/* Network Status Indicator */}
+          <div style={{
+            position: 'absolute',
+            top: '15px',
+            right: '15px',
+            background: isOffline ? 'rgba(255, 65, 54, 0.9)' : 'rgba(46, 204, 64, 0.9)',
+            color: 'white',
+            padding: '4px 12px',
+            borderRadius: '20px',
+            fontSize: '0.8rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            transition: 'all 0.3s ease',
+            zIndex: 10
+          }}>
+            {isOffline ? (
+              <>📶 Offline</>
+            ) : (
+              <>🟢 Online</>
+            )}
+          </div>
 
           <div className="riddle-question">
             {loading && language === 'en' ? (
