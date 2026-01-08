@@ -17,6 +17,30 @@ function App() {
   const [apiRiddle, setApiRiddle] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isOffline, setIsOffline] = useState(false);
+
+  // Helper to get a random local riddle excluding history
+  const getRandomLocalRiddle = (history) => {
+    let nextIndex;
+    // Simple logic: exclude current index, and try to exclude history if possible
+    let available = riddles.map((_, i) => i).filter(i => i !== currentRiddleIndex);
+
+    // If we haven't shown all riddles yet, filter out history too
+    if (history.length < riddles.length) {
+      available = available.filter(i => !history.includes(i));
+    }
+
+    if (available.length === 0) {
+      // Fallback if something weird happens, just pick random
+      nextIndex = Math.floor(Math.random() * riddles.length);
+    } else {
+      nextIndex = available[Math.floor(Math.random() * available.length)];
+    }
+
+    // Update history
+    const newHistory = history.length >= riddles.length ? [nextIndex] : [...history, nextIndex];
+    return { index: nextIndex, history: newHistory };
+  };
 
   const fetchRiddle = async () => {
     if (language !== 'en') return;
@@ -24,6 +48,13 @@ function App() {
     setLoading(true);
     setError(null);
     setShowAnswer(false);
+
+    // Check if offline
+    if (!navigator.onLine) {
+      switchToOfflineMode();
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch('https://api.api-ninjas.com/v1/riddles', {
@@ -39,15 +70,25 @@ function App() {
       const data = await response.json();
       if (data && data.length > 0) {
         setApiRiddle(data[0]);
+        setIsOffline(false);
       } else {
         throw new Error('No riddle found');
       }
     } catch (err) {
-      console.error(err);
-      setError('Failed to load new riddle. Try again!');
+      console.warn("API failed, falling back to local:", err);
+      // Fallback to local on error
+      switchToOfflineMode();
     } finally {
       setLoading(false);
     }
+  };
+
+  const switchToOfflineMode = () => {
+    setIsOffline(true);
+    const { index, history } = getRandomLocalRiddle(riddleHistory);
+    setCurrentRiddleIndex(index);
+    setRiddleHistory(history);
+    setApiRiddle(null);
   };
 
   useEffect(() => {
@@ -57,9 +98,9 @@ function App() {
       fetchRiddle();
     } else {
       // Initialize random local riddle for Tamil
-      const randomIndex = Math.floor(Math.random() * riddles.length);
-      setCurrentRiddleIndex(randomIndex);
-      setRiddleHistory([randomIndex]);
+      const { index, history } = getRandomLocalRiddle([]);
+      setCurrentRiddleIndex(index);
+      setRiddleHistory(history);
     }
   }, []);
 
@@ -67,12 +108,18 @@ function App() {
   useEffect(() => {
     setShowAnswer(false);
     if (language === 'en') {
-      if (!apiRiddle) fetchRiddle();
+      // If we don't have an API riddle AND we are not in offline mode (to prevent re-fetching if we already fell back), try fetch
+      // But actually, allow re-try if user switches lang back and forth to retry connection? 
+      // Let's stick to: if no apiRiddle, fetch.
+      if (!apiRiddle && !isOffline) fetchRiddle();
+      // If we are offline, we already have a local riddle selected via the fallback logic/initial load
     } else {
       // Ensure we have a valid local riddle index when switching back to Tamil
-      if (currentRiddleIndex === -1) {
-        const randomIndex = Math.floor(Math.random() * riddles.length);
-        setCurrentRiddleIndex(randomIndex);
+      // or if index is invalid
+      if (currentRiddleIndex === -1 || !riddles[currentRiddleIndex]) {
+        const { index, history } = getRandomLocalRiddle([]);
+        setCurrentRiddleIndex(index);
+        setRiddleHistory(history);
       }
     }
   }, [language]);
@@ -82,21 +129,13 @@ function App() {
   }, [darkMode]);
 
   const handleNextRiddle = () => {
-    if (language === 'en') {
+    if (language === 'en' && !isOffline) {
       fetchRiddle();
     } else {
-      // Local logic for Tamil
-      let nextIndex;
-      if (riddleHistory.length >= riddles.length) {
-        const available = riddles.map((_, i) => i).filter(i => i !== currentRiddleIndex);
-        nextIndex = available[Math.floor(Math.random() * available.length)];
-        setRiddleHistory([nextIndex]);
-      } else {
-        const available = riddles.map((_, i) => i).filter(i => !riddleHistory.includes(i));
-        nextIndex = available[Math.floor(Math.random() * available.length)];
-        setRiddleHistory([...riddleHistory, nextIndex]);
-      }
-      setCurrentRiddleIndex(nextIndex);
+      // Local logic for Tamil OR English Offline Mode
+      const { index, history } = getRandomLocalRiddle(riddleHistory);
+      setCurrentRiddleIndex(index);
+      setRiddleHistory(history);
       setShowAnswer(false);
     }
   };
@@ -105,7 +144,12 @@ function App() {
   let question = '', answer = '';
 
   if (language === 'en') {
-    if (apiRiddle) {
+    if (isOffline || !apiRiddle) {
+      // Fallback to local data
+      const currentLocalRiddle = riddles[currentRiddleIndex];
+      question = currentLocalRiddle?.questionEn || 'Loading...';
+      answer = currentLocalRiddle?.answerEn || '';
+    } else {
       question = apiRiddle.question;
       answer = apiRiddle.answer;
     }
@@ -117,8 +161,8 @@ function App() {
 
   const getKey = () => {
     // Unique key to force typewriter reload
-    if (language === 'en') return apiRiddle ? apiRiddle.question : 'loading';
-    return currentRiddleIndex + 'ta';
+    if (language === 'en' && !isOffline && apiRiddle) return apiRiddle.question;
+    return currentRiddleIndex + language;
   };
 
   return (
@@ -147,10 +191,27 @@ function App() {
 
       <main className="main-content">
         <div className="riddle-card" data-aos="zoom-in">
+          {/* Offline Indicator */}
+          {language === 'en' && isOffline && (
+            <div style={{
+              position: 'absolute',
+              top: '10px',
+              right: '10px',
+              background: '#ff9f1c',
+              color: 'white',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontSize: '0.8rem',
+              fontWeight: 'bold'
+            }}>
+              Offline Mode 📶
+            </div>
+          )}
+
           <div className="riddle-question">
             {loading && language === 'en' ? (
               <div className="loading-spinner">Loading Riddle...</div>
-            ) : error && language === 'en' ? (
+            ) : error && language === 'en' && !isOffline ? ( // Only show error if strictly not in offline mode, but we handle that via fallback
               <div style={{ color: 'red' }}>{error}</div>
             ) : (
               <Typewriter
@@ -173,7 +234,7 @@ function App() {
           )}
 
           <div className="action-buttons">
-            <button className="action-btn toggle-answer-btn" onClick={() => setShowAnswer(!showAnswer)} disabled={loading || (language === 'en' && !apiRiddle)}>
+            <button className="action-btn toggle-answer-btn" onClick={() => setShowAnswer(!showAnswer)} disabled={loading || (language === 'en' && !apiRiddle && !isOffline)}>
               {showAnswer ? (language === 'en' ? 'Hide Answer' : 'விடையை மறை') : (language === 'en' ? 'Show Answer' : 'விடை காட்டு')}
             </button>
             <button className="action-btn next-btn" onClick={handleNextRiddle} disabled={loading}>

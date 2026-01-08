@@ -84,23 +84,29 @@ body.dark-mode {
 }
 
 .riddle-card {
-  background-color: rgba(255, 255, 255, 0.1);
+  /* Common Glassmorphism Base */
+  background: rgba(255, 255, 255, 0.1);
   padding: 3rem;
   border-radius: 20px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   width: 100%;
   text-align: center;
-  /* Glassmorphism attempt */
   border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   box-sizing: border-box;
 }
 
 body.light-mode .riddle-card {
-  background-color: var(--card-bg-light);
+  background: rgba(255, 255, 255, 0.6);
+  /* Semi-transparent white */
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 body.dark-mode .riddle-card {
-  background-color: var(--card-bg-dark);
+  background: rgba(32, 58, 67, 0.6);
+  /* Semi-transparent dark */
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .riddle-question {
